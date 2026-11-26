@@ -22,9 +22,20 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 # Modo: signals | dry | live
 TRADE_MODE = os.getenv("TRADE_MODE", "signals").strip().lower()
 
+def _tf(name, default):
+    """Normaliza timeframes: '15min'->'15m', '1H'->'1h', '1hr'->'1h'."""
+    v = os.getenv(name, default).strip().lower().replace(" ", "")
+    for a, b in (("minutes", "m"), ("minute", "m"), ("mins", "m"), ("min", "m"),
+                 ("hours", "h"), ("hour", "h"), ("hrs", "h"), ("hr", "h"),
+                 ("days", "d"), ("day", "d")):
+        if v.endswith(a):
+            return v[: -len(a)] + b
+    return v
+
+
 # Escaneo
-TIMEFRAME = os.getenv("TIMEFRAME", "5m").strip().lower()
-HTF_TIMEFRAME = os.getenv("HTF_TIMEFRAME", "1h").strip().lower()
+TIMEFRAME = _tf("TIMEFRAME", "5m")
+HTF_TIMEFRAME = _tf("HTF_TIMEFRAME", "1h")
 # HTF_MODE: strict (debe alinear) | soft (suma/resta puntos) | off (ignorar)
 HTF_MODE = os.getenv("HTF_MODE", "soft").strip().lower()
 SCAN_INTERVAL = _int("SCAN_INTERVAL", 60)
