@@ -80,6 +80,9 @@ def analyze_symbol(ex, symbol, stats):
     if vol_ratio < config.MIN_VOL_RATIO:
         stats["rech_volumen"] += 1
         return None
+    if vol_ratio > config.MAX_VOL_RATIO:
+        stats["rech_vol_extremo"] += 1
+        return None
 
     atr_ma = float(atr_series.iloc[-21:-1].mean())
     compression = (atr / atr_ma) if atr_ma > 0 else 1.0
