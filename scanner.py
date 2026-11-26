@@ -1,4 +1,6 @@
 import logging
+from collections import Counter
+
 import pandas as pd
 
 import config
@@ -19,33 +21,36 @@ def _atr(df, period=14):
     return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 
-def analyze_symbol(ex, symbol):
-    # 1. Filtro de tendencia en HTF (1H por defecto)
-    ohlcv_htf = ex.fetch_ohlcv(symbol, config.HTF_TIMEFRAME, limit=80)
-    if not ohlcv_htf or len(ohlcv_htf) < 60:
+def _htf_trend(ex, symbol):
+    """Devuelve 'bull' | 'bear' | 'neutral' | None (sin datos)."""
+    o = ex.fetch_ohlcv(symbol, config.HTF_TIMEFRAME, limit=80)
+    if not o or len(o) < 60:
         return None
+    df = pd.DataFrame(o, columns=["ts", "open", "high", "low", "close", "vol"])
+    e50 = _ema(df["close"], 50).iloc[-1]
+    e20 = _ema(df["close"], 20).iloc[-1]
+    c = df["close"].iloc[-1]
+    if c > e50 and e20 >= e50:
+        return "bull"
+    if c < e50 and e20 <= e50:
+        return "bear"
+    return "neutral"
 
-    df_htf = pd.DataFrame(ohlcv_htf, columns=["ts", "open", "high", "low", "close", "vol"])
-    ema50_htf = _ema(df_htf["close"], 50).iloc[-1]
-    ema20_htf = _ema(df_htf["close"], 20).iloc[-1]
-    close_htf = df_htf["close"].iloc[-1]
 
-    htf_bull = close_htf > ema50_htf and ema20_htf >= ema50_htf
-    htf_bear = close_htf < ema50_htf and ema20_htf <= ema50_htf
-    if not (htf_bull or htf_bear):
-        return None
-
-    # 2. Datos en timeframe operativo (5m)
-    ohlcv = ex.fetch_ohlcv(symbol, config.TIMEFRAME, limit=120)
+def analyze_symbol(ex, symbol, stats):
+    # 1. Datos operativos (5m) primero: es el filtro mas selectivo
+    ohlcv = ex.fetch_ohlcv(symbol, config.TIMEFRAME, limit=150)
     if not ohlcv or len(ohlcv) < 80:
+        stats["sin_datos"] += 1
         return None
 
     df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "vol"])
-    df_closed = df.iloc[:-1].copy()
+    df_closed = df.iloc[:-1].copy()  # solo velas cerradas
 
     atr_series = _atr(df_closed, 14)
     atr = float(atr_series.iloc[-1])
     if atr <= 0:
+        stats["atr_cero"] += 1
         return None
 
     highs = df_closed["high"].tolist()
@@ -54,59 +59,80 @@ def analyze_symbol(ex, symbol):
 
     qm = detect_qm(highs, lows, closes, atr, recent_bars=config.QM_RECENT_BARS)
     if not qm:
+        stats["sin_qm"] += 1
         return None
+    stats["qm_detectado"] += 1
 
     side = qm["dir"]
-
-    if side == "LONG" and not htf_bull:
-        return None
-    if side == "SHORT" and not htf_bear:
-        return None
-
     entry = float(closes[-1])
     head = float(qm["head"])
-    qml = float(qm["qml"])
 
-    # 3. Validación de distancia al nivel QM
-    dist_to_qml = abs(entry - qml) / atr
-    if dist_to_qml > config.MAX_ENTRY_DIST_ATR:
+    # 2. Distancia al nivel de ruptura (BOS)
+    dist = abs(entry - float(qm["mid"])) / atr
+    if dist > config.MAX_ENTRY_DIST_ATR:
+        stats["rech_distancia"] += 1
         return None
 
-    # 4. Volumen relativo y compresión previa
-    vol_ma = float(df_closed["vol"].iloc[-21:-1].mean())
-    last_vol = float(df_closed["vol"].iloc[-1])
-    vol_ratio = (last_vol / vol_ma) if vol_ma > 0 else 0.0
-
+    # 3. Volumen: maximo de las ultimas 3 velas vs media previa
+    vol_ma = float(df_closed["vol"].iloc[-24:-3].mean())
+    vol_recent = float(df_closed["vol"].iloc[-3:].max())
+    vol_ratio = (vol_recent / vol_ma) if vol_ma > 0 else 0.0
     if vol_ratio < config.MIN_VOL_RATIO:
+        stats["rech_volumen"] += 1
         return None
 
     atr_ma = float(atr_series.iloc[-21:-1].mean())
     compression = (atr / atr_ma) if atr_ma > 0 else 1.0
 
-    # 5. Cálculo estructural de SL y TP (detrás de la cabeza del QM + colchón ATR)
+    # 4. SL detras de la cabeza + colchon; TP por RR
     buffer = config.SL_ATR * atr
     if side == "LONG":
         sl = head - buffer
         risk_dist = entry - sl
         if risk_dist <= 0:
+            stats["rech_sl"] += 1
             return None
-        tp = entry + (risk_dist * config.TP_RR)
+        tp = entry + risk_dist * config.TP_RR
     else:
         sl = head + buffer
         risk_dist = sl - entry
         if risk_dist <= 0:
+            stats["rech_sl"] += 1
             return None
-        tp = entry - (risk_dist * config.TP_RR)
+        tp = entry - risk_dist * config.TP_RR
 
-    # 6. Sistema de puntuación (0-100)
+    if risk_dist / atr > config.MAX_SL_ATR:
+        stats["rech_sl_lejano"] += 1
+        return None
+
+    # 5. Filtro HTF (solo se pide si ya hay patron valido)
+    htf_pts = 0
+    if config.HTF_MODE != "off":
+        trend = _htf_trend(ex, symbol)
+        want = "bull" if side == "LONG" else "bear"
+        if trend is None:
+            stats["sin_datos"] += 1
+            return None
+        if config.HTF_MODE == "strict" and trend != want:
+            stats["rech_htf"] += 1
+            return None
+        if trend == want:
+            htf_pts = 10
+        elif trend != "neutral":
+            htf_pts = -10
+
+    # 6. Score
     sweep_atr = abs(head - qm["ls"]) / atr
-    score = 50
-    score += min(20, int(sweep_atr * 25))
-    score += min(20, int((vol_ratio - 1.0) * 15))
-    score += 10 if dist_to_qml <= 1.2 else 0
+    score = 40
+    score += min(20, int(sweep_atr * 30))
+    score += min(20, int((vol_ratio - 1.0) * 20))
+    score += 10 if dist <= 1.2 else 0
+    score += 5 if qm["bos_age"] <= 2 else 0
+    score += htf_pts
     score = max(0, min(100, score))
 
     if score < config.MIN_SCORE:
+        stats["rech_score"] += 1
         return None
 
     return {
@@ -125,13 +151,16 @@ def analyze_symbol(ex, symbol):
 def scan(ex):
     symbols = ex.top_symbols(config.TOP_N)
     signals = []
+    stats = Counter()
     for sym in symbols:
         try:
-            sig = analyze_symbol(ex, sym)
+            sig = analyze_symbol(ex, sym, stats)
             if sig:
                 signals.append(sig)
         except Exception as e:
-            log.debug("Error analizando %s: %s", sym, e)
+            stats["errores"] += 1
+            log.warning("Error analizando %s: %s", sym, e)
 
+    log.info("Escaneados %d | %s", len(symbols), dict(stats))
     signals.sort(key=lambda x: x["score"], reverse=True)
     return signals

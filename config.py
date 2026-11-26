@@ -22,20 +22,24 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 # Modo: signals | dry | live
 TRADE_MODE = os.getenv("TRADE_MODE", "signals").strip().lower()
 
-# Escaneo (optimizado para 5m)
+# Escaneo
 TIMEFRAME = os.getenv("TIMEFRAME", "5m")
 HTF_TIMEFRAME = os.getenv("HTF_TIMEFRAME", "1h")
+# HTF_MODE: strict (debe alinear) | soft (suma/resta puntos) | off (ignorar)
+HTF_MODE = os.getenv("HTF_MODE", "soft").strip().lower()
 SCAN_INTERVAL = _int("SCAN_INTERVAL", 60)
 TOP_N = _int("TOP_N", 45)
-MIN_SCORE = _float("MIN_SCORE", 75)
+MIN_SCORE = _float("MIN_SCORE", 60)
 COOLDOWN_MIN = _int("COOLDOWN_MIN", 45)
 
-# QM y Filtros de Calidad
-PIVOT_LEN = _int("PIVOT_LEN", 4)
-MIN_SWEEP_ATR = _float("MIN_SWEEP_ATR", 0.15)
-QM_RECENT_BARS = _int("QM_RECENT_BARS", 30)
-MAX_ENTRY_DIST_ATR = _float("MAX_ENTRY_DIST_ATR", 2.2)
-MIN_VOL_RATIO = _float("MIN_VOL_RATIO", 1.3)
+# QM y filtros de calidad
+PIVOT_LEN = _int("PIVOT_LEN", 3)
+MIN_SWEEP_ATR = _float("MIN_SWEEP_ATR", 0.1)
+QM_RECENT_BARS = _int("QM_RECENT_BARS", 40)
+BOS_MAX_AGE = _int("BOS_MAX_AGE", 6)          # velas máx. desde la ruptura (BOS)
+MAX_ENTRY_DIST_ATR = _float("MAX_ENTRY_DIST_ATR", 2.5)  # distancia al nivel de BOS
+MIN_VOL_RATIO = _float("MIN_VOL_RATIO", 1.1)
+MAX_SL_ATR = _float("MAX_SL_ATR", 8)          # SL máximo en ATR
 
 # Riesgo (RISK_USDT = pérdida máxima real estimada en SL)
 RISK_USDT = _float("RISK_USDT", 5)
@@ -50,6 +54,8 @@ def validate():
     errors = []
     if TRADE_MODE not in ("signals", "dry", "live"):
         errors.append(f"TRADE_MODE inválido: '{TRADE_MODE}'. Usa: signals / dry / live")
+    if HTF_MODE not in ("strict", "soft", "off"):
+        errors.append(f"HTF_MODE inválido: '{HTF_MODE}'. Usa: strict / soft / off")
 
     if TRADE_MODE in ("live", "dry"):
         if not BINGX_API_KEY or not BINGX_SECRET:
