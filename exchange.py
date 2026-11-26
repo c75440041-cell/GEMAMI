@@ -1,4 +1,5 @@
 import logging
+import time
 import ccxt
 from ccxt.base.errors import AuthenticationError
 
@@ -68,7 +69,14 @@ class BingX:
         return [s for _, s in rows[:n]]
 
     def fetch_ohlcv(self, symbol, timeframe, limit):
-        return self.ex.fetch_ohlcv(symbol, timeframe, limit=limit)
+        last = None
+        for attempt in range(3):
+            try:
+                return self.ex.fetch_ohlcv(symbol, timeframe, limit=limit)
+            except Exception as e:  # 100410 = rate limit de BingX
+                last = e
+                time.sleep(1.5 * (attempt + 1))
+        raise last
 
     def balance_usdt(self):
         if not self.authenticated:

@@ -57,7 +57,7 @@ def analyze_symbol(ex, symbol, stats):
     lows = df_closed["low"].tolist()
     closes = df_closed["close"].tolist()
 
-    qm = detect_qm(highs, lows, closes, atr, recent_bars=config.QM_RECENT_BARS)
+    qm = detect_qm(highs, lows, closes, atr, recent_bars=config.QM_RECENT_BARS, diag=stats)
     if not qm:
         stats["sin_qm"] += 1
         return None

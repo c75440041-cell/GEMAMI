@@ -35,8 +35,8 @@ COOLDOWN_MIN = _int("COOLDOWN_MIN", 45)
 # QM y filtros de calidad
 PIVOT_LEN = _int("PIVOT_LEN", 3)
 MIN_SWEEP_ATR = _float("MIN_SWEEP_ATR", 0.1)
-QM_RECENT_BARS = _int("QM_RECENT_BARS", 40)
-BOS_MAX_AGE = _int("BOS_MAX_AGE", 6)          # velas máx. desde la ruptura (BOS)
+QM_RECENT_BARS = _int("QM_RECENT_BARS", 50)
+BOS_MAX_AGE = _int("BOS_MAX_AGE", 12)          # velas máx. desde la ruptura (BOS)
 MAX_ENTRY_DIST_ATR = _float("MAX_ENTRY_DIST_ATR", 2.5)  # distancia al nivel de BOS
 MIN_VOL_RATIO = _float("MIN_VOL_RATIO", 1.1)
 MAX_SL_ATR = _float("MAX_SL_ATR", 8)          # SL máximo en ATR

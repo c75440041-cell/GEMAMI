@@ -20,41 +20,59 @@ def pivots(highs, lows, n=PIVOT_LEN):
     return alt
 
 
-def detect_qm(highs, lows, closes, atr, recent_bars=40):
+def detect_qm(highs, lows, closes, atr, recent_bars=40, diag=None):
     """
     Bajista: maximo (hombro) -> minimo -> maximo mas alto (cabeza) -> cierre bajo el minimo (BOS).
-    Alcista: el espejo.
-    Busca el patron en una ventana de pivotes (el BOS genera pivotes nuevos,
-    por eso no basta con mirar los 3 ultimos). Devuelve dict o None.
+    Alcista: el espejo. Busca en una ventana de pivotes. `diag` (Counter) cuenta
+    en que fase se cae el patron, para depurar.
     """
+    d = diag if diag is not None else {}
+
+    def inc(k):
+        d[k] = d.get(k, 0) + 1
+
     sw = pivots(highs, lows)
     n = len(highs)
     if len(sw) < 3 or atr <= 0:
+        inc("f0_pocos_pivotes")
         return None
 
     for k in range(len(sw) - 1, 1, -1):
         (ia, ta, pa), (im, tm, pm), (ih, th, ph) = sw[k - 2], sw[k - 1], sw[k]
         if ih < n - recent_bars:
-            break  # pivotes mas antiguos, no sirven
+            break
 
-        after = slice(ih + 1, n)
-
-        # Bajista
-        if ta == 1 and th == 1 and pm < pa and ph > pa + MIN_SWEEP_ATR * atr:
-            if after.start < n and max(highs[after]) > ph:
-                continue  # la cabeza fue superada
+        if ta == 1:  # bajista: hombro, minimo, cabeza
+            if ph <= pa + MIN_SWEEP_ATR * atr:
+                inc("f1_cabeza_no_supera")
+                continue
+            if ih + 1 < n and max(highs[ih + 1:]) > ph:
+                inc("f2_cabeza_superada")
+                continue
             bos = next((j for j in range(ih + 1, n) if closes[j] < pm), None)
-            if bos is not None and (n - 1 - bos) <= BOS_MAX_AGE and closes[-1] < pm + 0.5 * atr:
-                return {"dir": "SHORT", "ls": pa, "mid": pm, "head": ph, "qml": pa,
-                        "bos_age": n - 1 - bos}
-
-        # Alcista
-        if ta == -1 and th == -1 and pm > pa and ph < pa - MIN_SWEEP_ATR * atr:
-            if after.start < n and min(lows[after]) < ph:
+            if bos is None:
+                inc("f3_sin_bos")
+                continue
+            if n - 1 - bos > BOS_MAX_AGE:
+                inc("f4_bos_viejo")
+                continue
+            return {"dir": "SHORT", "ls": pa, "mid": pm, "head": ph, "qml": pa,
+                    "bos_age": n - 1 - bos}
+        else:  # alcista: hombro(min), maximo, cabeza(min mas bajo)
+            if ph >= pa - MIN_SWEEP_ATR * atr:
+                inc("f1_cabeza_no_supera")
+                continue
+            if ih + 1 < n and min(lows[ih + 1:]) < ph:
+                inc("f2_cabeza_superada")
                 continue
             bos = next((j for j in range(ih + 1, n) if closes[j] > pm), None)
-            if bos is not None and (n - 1 - bos) <= BOS_MAX_AGE and closes[-1] > pm - 0.5 * atr:
-                return {"dir": "LONG", "ls": pa, "mid": pm, "head": ph, "qml": pa,
-                        "bos_age": n - 1 - bos}
+            if bos is None:
+                inc("f3_sin_bos")
+                continue
+            if n - 1 - bos > BOS_MAX_AGE:
+                inc("f4_bos_viejo")
+                continue
+            return {"dir": "LONG", "ls": pa, "mid": pm, "head": ph, "qml": pa,
+                    "bos_age": n - 1 - bos}
 
     return None
