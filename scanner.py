@@ -108,11 +108,17 @@ def analyze_symbol(ex, symbol, stats):
     # 5. Filtro HTF (solo se pide si ya hay patron valido)
     htf_pts = 0
     if config.HTF_MODE != "off":
-        trend = _htf_trend(ex, symbol)
         want = "bull" if side == "LONG" else "bear"
+        try:
+            trend = _htf_trend(ex, symbol)
+        except Exception as e:
+            log.warning("HTF falló %s: %s", symbol, e)
+            trend = None
         if trend is None:
-            stats["sin_datos"] += 1
-            return None
+            stats["htf_sin_datos"] += 1
+            if config.HTF_MODE == "strict":
+                return None
+            trend = "neutral"  # en modo soft no bloquea la señal
         if config.HTF_MODE == "strict" and trend != want:
             stats["rech_htf"] += 1
             return None

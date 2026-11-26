@@ -23,8 +23,8 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 TRADE_MODE = os.getenv("TRADE_MODE", "signals").strip().lower()
 
 # Escaneo
-TIMEFRAME = os.getenv("TIMEFRAME", "5m")
-HTF_TIMEFRAME = os.getenv("HTF_TIMEFRAME", "1h")
+TIMEFRAME = os.getenv("TIMEFRAME", "5m").strip().lower()
+HTF_TIMEFRAME = os.getenv("HTF_TIMEFRAME", "1h").strip().lower()
 # HTF_MODE: strict (debe alinear) | soft (suma/resta puntos) | off (ignorar)
 HTF_MODE = os.getenv("HTF_MODE", "soft").strip().lower()
 SCAN_INTERVAL = _int("SCAN_INTERVAL", 60)
@@ -50,8 +50,14 @@ SL_ATR = _float("SL_ATR", 0.5)
 TP_RR = _float("TP_RR", 2.2)
 
 
+VALID_TF = ("1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d")
+
+
 def validate():
     errors = []
+    for name, val in (("TIMEFRAME", TIMEFRAME), ("HTF_TIMEFRAME", HTF_TIMEFRAME)):
+        if val not in VALID_TF:
+            errors.append(f"{name} inválido: '{val}'. Usa uno de: {', '.join(VALID_TF)}")
     if TRADE_MODE not in ("signals", "dry", "live"):
         errors.append(f"TRADE_MODE inválido: '{TRADE_MODE}'. Usa: signals / dry / live")
     if HTF_MODE not in ("strict", "soft", "off"):

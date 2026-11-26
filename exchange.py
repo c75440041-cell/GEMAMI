@@ -73,6 +73,8 @@ class BingX:
         for attempt in range(3):
             try:
                 return self.ex.fetch_ohlcv(symbol, timeframe, limit=limit)
+            except ccxt.BadRequest:
+                raise  # parametro invalido: reintentar no sirve
             except Exception as e:  # 100410 = rate limit de BingX
                 last = e
                 time.sleep(1.5 * (attempt + 1))
